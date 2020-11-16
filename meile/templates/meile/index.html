@@ -1,0 +1,453 @@
+{% extends "../base.html" %}
+{% load static %}
+{% block scripts %}
+    <script>
+        const roomName = "biers";
+        var hitaudio = new Audio('{% static "hit.mp3" %}');
+        var celebrateaudio = new Audio('{% static "celebrate.mp3" %}');
+        var noot = new Audio('{% static "noot.mp3" %}');
+        var mitfahrer = 0;
+        var fahrt_id = -1;
+        var brokiss_id = -1;
+        var countdownTime = -1;
+        var countdown_id = -1;
+        var rollText = [];
+
+        var hitText = '<i class="fas fa-skull"></i> <i class="fas fa-skull"></i>AUA<i class="fas fa-skull"></i> <i class="fas fa-skull"></i> ';
+        var beerText = '<i class="fas fa-beer" style="color: #ff922b;"></i><i class="fas fa-beer" style="color: #ff922b;"></i><i class="fas fa-beer" style="color: #ff922b;"></i><i class="fas fa-beer" style="color: #ff922b;"></i><i class="fas fa-beer" style="color: #ff922b;"></i><i class="fas fa-beer" style="color: #ff922b;"></i>'
+        var motto = "{{ t.motto }}";
+
+        const chatSocket = new WebSocket(
+            'ws://'
+            + window.location.host
+            + '/ws/meile/'
+        );
+
+        chatSocket.onmessage = function(e) {
+            const data = JSON.parse(e.data);
+            if(data.type=="hauen") {
+                $("#notification").show();
+                if(data.hit == "{{user.get_username}}"){
+                    hitaudio.play();
+                    if(data.hitter == "{{user.get_username}}"){
+                        $("#notification").html("Was geschah zuletzt: Du Depp hast dich selbst geschlagen");
+                    } else {
+                        $("#notification").html("Was geschah zuletzt: Du wurdest geschlagen von "+data.hitter);
+                    }
+                }
+                else {
+                    $("#notification").html("Was geschah zuletzt: "+data.hit+" wurde von "+data.hitter+" geschlagen");
+                }
+                //$("#notification").fadeOut(5000);
+
+
+                if($("#"+data.hit+"-motto").html() != hitText && $("#"+data.hit+"-motto").html() != beerText){
+                    var old = $("#"+data.hit+"-motto").html();
+                    $("#"+data.hit+"-motto").html(hitText);
+                }
+                setTimeout(function(){
+                    $("#"+data.hit+"-motto").html(old);
+                }, 5000);
+                $("#"+data.hit+"-hit").html('<i class="fas fa-skull"></i> '+ data.newcount );
+            } else if (data.type=="trink") {
+                $("#notification-bier").show();
+                if(data.trinker == "{{user.get_username}}"){
+                    $("#notification-bier").html("Gute Arbeit!");
+                } else {
+                    tmp = "'";
+                    $("#notification-bier").html(data.trinker + ' hat sein '+ data.newcount + ' Bier getrunken! <button class="btn btn-sm btn-danger" onclick="hau('+tmp+data.trinker+tmp+','+tmp+'{{user.get_username}}'+tmp+')">Eine reinschlagen!</button>');;
+                }
+
+                if($("#"+data.trinker+"-motto").html() != hitText && $("#"+data.trinker+"-motto").html() != beerText){
+                    var old = $("#"+data.trinker+"-motto").html();
+                    $("#"+data.trinker+"-motto").html(beerText);
+                }
+                setTimeout(function(){
+                    $("#"+data.trinker+"-motto").html(old);
+                }, 5000);
+
+                $("#"+data.trinker+"-bier").html('<i class="fas fa-beer" style="color: #ff922b;"></i> '+ data.newcount );
+            } else if (data.type=="update"){
+                for (i = 0; i<data.trinker.length; i++){
+                    console.log(data.trinker[i]);
+                    t = data.trinker[i];
+                    setBattery(t.name, t.lastbeer);
+                }
+            } else if (data.type=="busstart"){
+                mitfahrer = 0;
+                fahrt_id = data.fahrt_id;
+                $("#busfahrn").modal();
+            } else if (data.type=="einstieg"){
+                $("#mitfahrers").append("<div style='position:absolute;left:"+(120+(60*mitfahrer++))+"px;top:113px;color:white;'>"+data.trinker+"</div>")
+            } else if (data.type=="losfahren"){
+                $("#busfahrn").modal('hide');
+                mitfahrer = 0;
+                fahrt_id = 0;
+                noot.play();
+            } else if (data.type=="brokissrein") {
+                if(data.zu == "{{user.get_username}}") {
+                    brokiss_id = data.brokiss_id;
+                    $("#bromodal").html("<b>"+data.von + "</b> möchte dir einen Bro-Kiss geben. Bist du cool damit?");
+                    $("#brokiss").modal();
+                }
+                if(data.von == "{{user.get_username}}"){
+                    brokiss_id = data.brokiss_id;
+                }
+            } else if (data.type=="kissanswer"){
+                if(data.brokiss_id == brokiss_id){
+                    brokiss_id = -1;
+                    if(data.antwort > 0) {
+                        $("#kissgif").show();
+                        setTimeout(function () {
+                            $("#kissgif").hide();
+                        }, 5000);
+                    }
+                }
+            } else if (data.type=="saufalarm"){
+                setTimeout(function(){
+                    $('#saufalarm').modal();
+                }, data.time);
+            } else if (data.type=="saufcountdown"){
+                countdownTime = data.time;
+                countdown_id = data.countdown_id;
+                $('#saufcountdownmodal').html(countdownTime);
+                $('#saufcountdown').modal();
+                setTimeout(elCountDown, 1000);
+
+            } else if (data.type=="message"){
+                rollText.push(data.message);
+                zeigeRolltext();
+                setTimeout(remRollText, 60000)
+            }
+
+            //$("#lol").html(data.message + '\n');
+        };
+
+        chatSocket.onclose = function(e) {
+            console.error('Chat socket closed unexpectedly');
+        };
+
+        function elCountDown(){
+            if(countdownTime > 0){
+                countdownTime--;
+                $('#saufcountdownmodal').html(countdownTime);
+                setTimeout(elCountDown, 1000);
+            }
+        }
+
+        function setBattery(username, time){
+            $("#"+username+"-battery").removeClass("fa-battery-full fa-battery-three-quarters fa-battery-half fa-battery-quarter fa-battery-empty ")
+            if(time < 5){
+                $("#"+username+"-battery").addClass("fa-battery-full");
+            } else if(time < 10){
+                $("#"+username+"-battery").addClass("fa-battery-three-quarters");
+            } else if(time < 15){
+                $("#"+username+"-battery").addClass("fa-battery-half");
+            } else if(time < 30){
+                $("#"+username+"-battery").addClass("fa-battery-quarter");
+            } else {
+                $("#"+username+"-battery").addClass("fa-battery-empty");
+            }
+        }
+
+        function remRollText(){
+            rollText.shift();
+            zeigeRolltext();
+        }
+
+        function zeigeRolltext(){
+            txt = "";
+            for(i = 0;i<rollText.length;i++){
+                txt += rollText[i] + " | ";
+            }
+            $("#chatto").html(txt);
+        }
+
+        function sendMessage(message) {
+            chatSocket.send(JSON.stringify({
+                'type': 'message',
+                'message': message
+            }));
+        };
+
+        function sendNote(){
+            var txt = $("#noteText").val();
+            chatSocket.send(JSON.stringify({
+                'type':'noten',
+                'trinker':'{{user.get_username}}',
+                'message': txt
+            }))
+            $("#noteText").val("");
+        }
+
+        function bier(){
+            celebrateaudio.play();
+            chatSocket.send(JSON.stringify({
+                'type': 'trink',
+                'trinker': '{{user.get_username}}'
+            }));
+        }
+
+        function hau(hit,hitter){
+            chatSocket.send(JSON.stringify({
+                'type': 'hauen',
+                'hauer': hitter,
+                'opfer': hit
+            }));
+        }
+
+        function start_bus(){
+            chatSocket.send(JSON.stringify({
+                'type': 'busstart',
+            }));
+        }
+
+        function einsteigen(){
+            chatSocket.send(JSON.stringify({
+                'type': 'einsteigen',
+                'fahrt_id': fahrt_id ,
+                'fahrer': '{{user.get_username}}'
+            }));
+        }
+
+        function losfahren(){
+            chatSocket.send(JSON.stringify({
+                'type': 'losfahren',
+            }));
+        }
+
+        function kiss(zu, von){
+            chatSocket.send(JSON.stringify({
+                'type': 'kiss',
+                'von': von,
+                'zu': zu
+            }));
+        }
+
+        function broanswer(antwort){
+            chatSocket.send(JSON.stringify({
+                'type': 'kissanswer',
+                'brokiss_id': brokiss_id,
+                'antwort': antwort
+            }));
+            $("#brokiss").modal('hide');
+        }
+
+        function start_saufalarm(){
+            chatSocket.send(JSON.stringify({
+                'type': 'saufalarm',
+                'method': 'immediately'
+            }));
+        }
+
+        function start_saufrandomalarm(){
+             chatSocket.send(JSON.stringify({
+                 'type': 'saufalarm',
+                 'method': 'random'
+            }));
+        }
+
+        function start_saufcountdown(){
+            var interval = $("#inputSekunden").val();
+            chatSocket.send(JSON.stringify({
+                'type': 'saufcountdown',
+                'interval': interval
+            }));
+        }
+
+        function hideSaufalarm(){
+            $('#saufalarm').modal('hide');
+        }
+
+        function doneCountdown(status){
+             chatSocket.send(JSON.stringify({
+                 'type': 'donecountdown',
+                 'user': '{{user.get_username}}',
+                 'countdown_id': countdown_id,
+                 'erfolg': status
+            }));
+            $('#saufcountdown').modal('hide');
+        }
+
+        function updateAlle(){
+            var enabled = $("#updateAll").prop('checked');
+            if(enabled) {
+                chatSocket.send(JSON.stringify({'type': 'updateall'}));
+                setTimeout(updateAlle, 10000);
+            }
+        }
+
+
+        $(function() {
+            //$("#notification").hide();
+            $("#chatform")[0].addEventListener('submit', function (evt){evt.preventDefault(); sendNote();})
+            $("#kissgif").hide();
+        });
+    </script>
+{% endblock %}
+
+{% block content %}
+    <div class="container-fluid">
+        <ol class="alert alert-primary mb-4">
+            <li class="btn-block" id="notification">Was geschah zuletzt: </li>
+        </ol>
+        <div class="mb-4" id="kissgif"><img src="{% static "beavis.gif" %}" /> </div>
+        <ol class="breadcrumb mb-4">
+            <li class="breadcrumb-item active btn-block">Ticker: <marquee id="chatto"></marquee></li>
+        </ol>
+        <div class="row">
+            <div class="col-xl-3 col-md-6">
+                <div class="card bg-primary text-white mb-4">
+                    <div class="card-body">Status: Alles in Ordnung</div>
+                    <div class="card-footer d-flex align-items-center justify-content-between">
+                        <div class="small text-white"><i class="fas fa-angle-right"></i> Du hast {{ user.biere.count }} Bier getrunken</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-xl-3 col-md-6">
+                <div class="card bg-success text-white mb-4">
+                    <div class="card-body">Habe ein Bier geöffnet</div>
+                    <div class="card-footer d-flex align-items-center justify-content-between">
+                        <a class="small text-white stretched-link" href="#" onclick="bier()">Los, teile es allen mit!</a>
+                        <div class="small text-white"><i class="fas fa-angle-right"></i></div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-xl-3 col-md-6">
+                <div class="card bg-danger text-white mb-4">
+                    <div class="card-body">Random Bro-Kiss</div>
+                    <div class="card-footer d-flex align-items-center justify-content-between">
+                        <a class="small text-white stretched-link" href="#" onclick="kiss('random','{{user.get_username}}')">Vorsicht, es könnte jeder sein!</a>
+                        <div class="small text-white"><i class="fas fa-angle-right"></i></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="fas fa-table mr-1"></i>
+                Teilnehmende
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-bordered" id="dataTable" width="100%" cellspacing="0">
+                        <thead>
+                        <tr>
+                            <th>Säufer</th>
+                            <th>Bier</th>
+                            <th>Geschlagen</th>
+                            <th>Säufermotto</th>
+                            <th>Dabei seit</th>
+                            <th>Haue verteilen</th>
+                            <th>Bro-Kuss</th>
+                        </tr>
+                        </thead>
+                        <tfoot>
+                        <tr>
+                            <th>Säufer</th>
+                            <th>Bier</th>
+                            <th>Geschlagen</th>
+                            <th>Säufermotto</th>
+                            <th>Dabei seit</th>
+                            <th>Haue verteilen</th>
+                            <th>Bro-Kuss</th>
+                        </tr>
+                        </tfoot>
+                        <tbody>
+                        {% for t in trinker %}
+                            <tr>
+                                <td><h3><span id="{{ t.user }}-name"><i id="{{ t.user }}-battery" class="fas fa-battery-full"></i> {{ t.user }} </span></h3></td>
+                                <td><h2><span class="" id="{{ t.user }}-bier"><i class="fas fa-beer" style="color: #ff922b;"></i> {{t.biere.count}}</span></h2></td>
+                                <td><h2><span class="" id="{{ t.user }}-hit"><i class="fas fa-skull"></i> {{t.geschlagen.count}}</span></h2></td>
+                                <td><h3><span id="{{ t.user }}-motto">{{ t.motto }}</span></h3></td>
+                                <td><h2>{{ t.dabei | date:'H:i'}}</h2></td>
+                                <td><button class="btn btn-block btn-warning" onclick="hau('{{ t.user }}','{{user.get_username}}')">Gib ihm!</button></td>
+                                <td><button class="btn btn-block btn-danger" onclick="kiss('{{ t.user }}','{{user.get_username}}')">Gib ihm mehr!</button></td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Modal -->
+    <div class="modal fade" id="busfahrn" tabindex="-1" role="dialog" aria-labelledby="exampleModalCenterTitle" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered"  role="document">
+            <div class="modal-content" style="width:700px;">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="exampleModalLongTitle">Busfahren!</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div id="mitfahrers"></div>
+                    <input type="hidden" id="busfahrt_id" value="-1">
+                    <img src="{% static "bus.png" %}"/>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary btn-block" onclick="einsteigen()">Einsteigen</button>
+                    {% if user.get_username == 'Achim' %}
+                        <button type="button" class="btn btn-danger btn-block" onclick="losfahren()">Losfahren</button>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="brokiss" tabindex="-1" role="dialog" aria-labelledby="exampleModalCenterTitle" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered"  role="document">
+            <div class="modal-content" style="width:700px;">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="exampleModalLongTitle">Bro-Kiss-Time!</h5>
+                </div>
+                <div class="modal-body">
+                    <div id="bromodal"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary btn-block" onclick="broanswer(1)">Ja Man!</button>
+                    <button type="button" class="btn btn-danger btn-block" onclick="broanswer(0)">Ne, jetzt nicht</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="saufalarm" tabindex="-1" role="dialog" aria-labelledby="exampleModalCenterTitle" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered"  role="document">
+            <div class="modal-content" style="width:700px;">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="exampleModalLongTitle">Gutschein fürs Saufen</h5>
+                </div>
+                <div class="modal-body">
+                    <div id="">Halleluja, Saufen! Jemand mag, dass du trinkst. Also nimm einen kräftigen Schluck!</div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary btn-block" onclick="hideSaufalarm()">Hab ich gemacht</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="saufcountdown" tabindex="-1" role="dialog" aria-labelledby="exampleModalCenterTitle" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered"  role="document">
+            <div class="modal-content" style="width:700px;">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="exampleModalLongTitle">Saufcountdown! Es wird wieder gesoffen!</h5>
+                </div>
+                <div class="modal-body">
+                    <div>Jetzt wird wieder angezogen! Butter bei die Fische. Der Timer läuft. Trinke dein Bier vorher aus!</div>
+                    <h2><div id="saufcountdownmodal"></div></h2>
+                 </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary btn-block" onclick="doneCountdown(1)">Leer!</button>
+                    <button type="button" class="btn btn-danger btn-block" onclick="doneCountdown(0)">Ich habe es nicht geschafft!</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+{% endblock %}

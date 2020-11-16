@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+</head>
+<body>
+    {% if user %}
+        <ul>
+        {% for l in user.location_set.all %}
+            <li>Lat: {{ l.latitude }}  Long {{ l.longitude }} on {{ l.timestamp }}</li>
+        {% endfor %}
+        </ul>
+    {% else %}
+        No users there.
+    {%  endif %}
+</body>
+</html>
